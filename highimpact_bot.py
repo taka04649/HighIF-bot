@@ -30,6 +30,7 @@ NOTIFIED_FILE = Path(__file__).parent / "notified_highimpact_pmids.json"
 
 SEARCH_DAYS = 3  # 直近3日分 (週3回実行を想定)
 MAX_RESULTS = 20
+MAX_POSTS_PER_RUN = 3  # 1回の実行で通知する最大件数
 
 # ============================================================
 # 監視対象ジャーナル
@@ -454,7 +455,9 @@ def main():
     print(f"=== High Impact GI Bot 実行: {datetime.now().isoformat()} ===")
 
     notified = load_notified_pmids()
-    count = 0
+
+    # ---- 全ジャーナルをスキャンして候補を収集 ----
+    candidates = []  # (article, config) のリスト
 
     for journal_ta, config in JOURNALS.items():
         apply_filter = journal_ta in GENERAL_JOURNALS
@@ -476,17 +479,36 @@ def main():
         print(f"{label} 新着 {len(new_pmids)} 件")
 
         articles = fetch_articles(new_pmids)
+        for article in articles:
+            candidates.append((article, config))
         time.sleep(0.4)
 
-        for article in articles:
-            try:
-                result = summarize_article(article)
-                send_discord_notification(article, result, config)
-                notified.add(article["pmid"])
-                count += 1
-                time.sleep(2)  # Discord rate limit
-            except Exception as e:
-                print(f"[Error] PMID {article['pmid']}: {e}")
+    print(f"[集計] 全候補 {len(candidates)} 件")
+
+    if not candidates:
+        print("新着論文なし。終了。")
+        save_notified_pmids(notified)
+        return
+
+    # ---- 優先度でソート（総合トップ誌 → 消化器専門誌 → その他）----
+    tier_priority = {"総合": 0, "消化器": 1, "肝臓": 2, "IBD": 3, "内視鏡": 4, "レビュー": 5, "マイクロバイオーム": 6}
+    candidates.sort(key=lambda x: tier_priority.get(x[1]["tier"], 99))
+
+    # ---- 上位 MAX_POSTS_PER_RUN 件だけ通知 ----
+    selected = candidates[:MAX_POSTS_PER_RUN]
+    remaining = len(candidates) - len(selected)
+    print(f"[選定] {len(selected)} 件を通知（残り {remaining} 件は次回以降）")
+
+    count = 0
+    for article, config in selected:
+        try:
+            result = summarize_article(article)
+            send_discord_notification(article, result, config)
+            notified.add(article["pmid"])
+            count += 1
+            time.sleep(2)  # Discord rate limit
+        except Exception as e:
+            print(f"[Error] PMID {article['pmid']}: {e}")
 
     save_notified_pmids(notified)
     print(f"=== 完了: {count} 件通知 ===")
