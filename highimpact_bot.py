@@ -24,7 +24,7 @@ HIGHIMPACT_WEBHOOK_URL = os.environ["HIGHIMPACT_WEBHOOK_URL"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
 genai.configure(api_key=GEMINI_API_KEY)
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 
 NOTIFIED_FILE = Path(__file__).parent / "notified_highimpact_pmids.json"
 
